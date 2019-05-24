@@ -108,7 +108,7 @@ function clear_token_block(tokens, st, ed) {
 const left_bracket  = ['{', '[', '(', '<'];
 const right_bracket = ['}', ']', ')', '>'];
 const bracket_map = {
-   '{': '}', '}': '{', '(': ')', '}': '(',
+   '{': '}', '}': '{', '(': ')', ')': '(',
    '[': ']', ']': '[', '<': '>', '>': '<'
 };
 
@@ -148,6 +148,7 @@ function detect_pair(tokens, index) {
          }
          c --;
       }
+      return { startIndex: st, endIndex: ed };
    } else {
       // should not be here
       return null;

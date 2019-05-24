@@ -33,7 +33,7 @@ public class X <T> {
          System.out.println(x + 1);
       }
    }
-   @a5 @X.Test.TestX() public void a4() {
+   @a5 @X.Test.TestX() public void a4() throws Exception {
       F fn1 = x -> System.out.println(x);
       F fn2 = (int x) -> System.out.println(x+1);
       fn2.run(1);
