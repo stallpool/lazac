@@ -53,8 +53,24 @@ const java_feature_decorator = {
       'public', 'private', 'default', 'abstract', 'static', 'synchronized',
       'protected', 'transient', 'strictfp', 'volatile', 'const', 'native',
    ],
-   detect_modifier: function (env, cursor) {
-      // backward
+   detect_ref: function (env, st, ed) {
+      let ref = [];
+      for (let i = st; i <= ed; i ++) {
+         let x = env.tokens[i];
+         if (x.token === '.') {
+            ref.push('.');
+            continue;
+         }
+         if (!x.position) continue;
+         // XXX: now skip x.class
+         if (java_keywords.includes(x.token)) continue;
+         ref.push(Object.assign({
+            name: x.token,
+         }, x.position));
+      }
+      return ref;
+   },
+   detect_modifier_backward: function (env, cursor) {
       let modifier = [];
       let st = cursor, x;
       st = i_common.search_prev_skip_spacen(env.tokens, st-1);
@@ -67,9 +83,11 @@ const java_feature_decorator = {
          x = env.tokens[st];
       } while (true);
       if (env.modifier) modifier = env.modifier.concat(modifier);
-      delete env.modifier;
-      if (!modifier.length) return null;
-      return modifier;
+      if (env.modifier && env.modifier.length) {
+         st = modifier[0].startIndex;
+      }
+      env.modifier = modifier;
+      return st;
    },
    detect_foward_modifier: function (env, cursor, start) {
       let st = cursor-1, x;
@@ -148,11 +166,12 @@ const java_feature_decorator = {
       let st = i_common.search_prev_skip_spacen(env.tokens, cursor-1);
       let x = env.tokens[st];
       if (x && x.token === '.') return 0; // e.g. Reflect.class
-      let modifier = java_feature_decorator.detect_modifier(env, cursor);
+      let type_st = java_feature_decorator.detect_modifier_backward(env, cursor);
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       let scope_item = {};
-      if (modifier) scope_item.modifier = modifier;
+      if (env.modifier) scope_item.modifier = env.modifier;
+      delete env.modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
       scope_item.position = env.tokens[ed].position;
@@ -160,6 +179,7 @@ const java_feature_decorator = {
       // TODO: insert extends and implements decorator
       let block = find_scope(env, block_st);
       scope_item.block = block;
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
       ed = block.endIndex + 1;
       scope_item.type = 'class';
       scope.symbol_list.push(scope_item);
@@ -169,11 +189,12 @@ const java_feature_decorator = {
       return ed - cursor;
    },
    'interface': function (env, cursor) {
-      let modifier = java_feature_decorator.detect_modifier(env, cursor);
+      let type_st = java_feature_decorator.detect_modifier_backward(env, cursor);
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       let scope_item = {};
-      if (modifier) scope_item.modifier = modifier;
+      if (env.modifier) scope_item.modifier = env.modifier;
+      delete env.modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
       scope_item.position = env.tokens[ed].position;
@@ -181,6 +202,7 @@ const java_feature_decorator = {
       // TODO: insert implements decorator
       let block = find_scope(env, block_st);
       scope_item.block = block;
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
       ed = block.endIndex + 1;
       scope_item.type = 'interface';
       scope.symbol_list.push(scope_item);
@@ -194,17 +216,19 @@ const java_feature_decorator = {
       let x = env.tokens[ed];
       if (!x) return 0;
       if (x.token !== 'interface') return 0;
-      let modifier = java_feature_decorator.detect_modifier(env, cursor);
+      let type_st = java_feature_decorator.detect_modifier_backward(env, cursor);
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       let scope_item = {};
-      if (modifier) scope_item.modifier = modifier;
+      if (env.modifier) scope_item.modifier = env.modifier;
+      delete env.modifier;
       ed = i_common.search_next_skip_spacen(env.tokens, ed+1);
       scope_item.name = env.tokens[ed].token;
       scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       let block = find_scope(env, block_st);
       scope_item.block = block;
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
       ed = block.endIndex + 1;
       scope_item.type = '@interface';
       scope.symbol_list.push(scope_item);
@@ -214,17 +238,19 @@ const java_feature_decorator = {
       return ed - cursor;
    },
    'enum': function (env, cursor) {
-      let modifier = java_feature_decorator.detect_modifier(env, cursor);
+      let type_st = java_feature_decorator.detect_modifier_backward(env, cursor);
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       let scope_item = {};
-      if (modifier) scope_item.modifier = modifier;
+      if (env.modifier) scope_item.modifier = env.modifier;
+      delete env.modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
       scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       let block = find_scope(env, block_st);
       scope_item.block = block;
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
       ed = block.endIndex + 1;
       scope_item.type = 'enum';
       scope.symbol_list.push(scope_item);
@@ -294,7 +320,7 @@ const java_feature_decorator = {
       x = env.tokens[st];
       if (!x) return 0;
       // e.g. public static <T> ArrayList<T>[][] ...
-      java_feature_decorator.detect_foward_modifier(env, cursor);
+      let modifier_ed = java_feature_decorator.detect_foward_modifier(env, st);
       // TODO: detect generic and return type
       if (env.modifier) scope_item.modifier = env.modifier;
       delete env.modifier;
@@ -305,6 +331,17 @@ const java_feature_decorator = {
       scope.symbol_list.push(scope_item);
       env.scope_stack.push(scope_item);
       // TODO: insert function insight decorator
+      let function_st = cursor;
+      if (env.modifier) {
+         if (env.modifier[0].endIndex) {
+            function_st = env.modifier[0].startIndex;
+         } else {
+            function_st = i_common.search_prev_stop(env.tokens, modifier_ed-1, [env.modifier[0]]);
+         }
+      } else {
+         function_st = i_common.search_prev_stop(env.tokens, st, ['{', '}', ';']);
+      }
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, function_st, block_range.endIndex);
       env.scope_stack.pop();
       return block_range.endIndex - cursor + 1;
    },
@@ -322,6 +359,17 @@ const java_feature_decorator = {
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       scope.symbol_list.push(scope_item);
+      let function_st = cursor;
+      if (env.modifier) {
+         if (env.modifier[0].endIndex) {
+            function_st = env.modifier[0].startIndex;
+         } else {
+            function_st = i_common.search_prev_stop(env.tokens, modifier_ed-1, [env.modifier[0]]);
+         }
+      } else {
+         function_st = i_common.search_prev_stop(env.tokens, scope_item.param.startIndex, ['{', '}', ';']);
+      }
+      scope_item.ref_list = java_feature_decorator.detect_ref(env, function_st, cursor);
       return 1;
 
       function get_function(env, ed) {
@@ -402,6 +450,7 @@ const java_feature_decorator = {
             }
          }
       }
+      scope.ref_list = scope.ref_list.concat(java_feature_decorator.detect_ref(env, statement_st, cursor));
       scope.symbol_list = scope.symbol_list || [];
       fields.forEach((item) => {
          scope.symbol_list.push(item);
@@ -431,6 +480,9 @@ const java_feature_decorator = {
          scope_item.subtype = 'init';
       }
       scope_item.block = block_range;
+      scope_item.ref_list = java_feature_decorator.detect_ref(
+         env, block_range.startIndex, block_range.endIndex
+      );
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       scope.symbol_list.push(scope_item);
@@ -536,9 +588,11 @@ function symbol_map(env) {
    env.symbol_index = {
       java: {}
    };
-   iterate_tree(env.scope_tree, env.symbol_index.java);
+   env.symbol_ref = [];
+   let base_package = env.scope_tree.base;
+   iterate_tree(env.scope_tree, env.symbol_index.java, env.symbol_ref, base_package);
 
-   function iterate_tree(scope_item, symbol_index) {
+   function iterate_tree(scope_item, symbol_index, symbol_ref, scope_string) {
       if (index_able.includes(scope_item.type)) {
          let index = symbol_index[scope_item.name];
          if (!Array.isArray(index)) {
@@ -546,11 +600,24 @@ function symbol_map(env) {
             symbol_index[scope_item.name] = index;
          }
          index.push(Object.assign({
-            type: scope_item.type
+            type: scope_item.type,
+            scope: scope_string,
          }, scope_item.position));
       }
       if (scope_item.symbol_list && scope_item.symbol_list.length) {
-         scope_item.symbol_list.forEach((scope_item) => iterate_tree(scope_item, symbol_index));
+         scope_item.symbol_list.forEach(
+            (scope_item) => iterate_tree(
+               scope_item, symbol_index, symbol_ref,
+               `${scope_string}.${scope_item.name}`
+            )
+         );
+         scope_item.ref_list && scope_item.ref_list.forEach((ref) => {
+            ref.scope = scope_string;
+            symbol_ref.push(ref);
+         });
+         // TODO: link scope_item.ref_list
+         // register to symbol_ref
+         // and then outside, implement link to find right ref
       }
    }
 }
@@ -560,9 +627,10 @@ function parse(env) {
    // i_extractor.merge_tokens(env, java_combinations);
    i_decorator.decorate_position_linecolumn(env, (item) => {
       if (!item.token) return true;
-      let ch = item.token.charAt(0);
-      if (i_common.stops.includes(ch)) return true;
-      return false;
+      if (i_common.is_symbol(item.token)) {
+         return false;
+      }
+      return true;
    });
    env.scope_tree = {};
    env.scope_stack = [ env.scope_tree ];
@@ -574,6 +642,7 @@ function parse(env) {
       tokens: env.tokens,
       scope: env.scope_tree,
       symbol_index: env.symbol_index,
+      symbol_ref: env.symbol_ref,
    };
    return parsed;
 }

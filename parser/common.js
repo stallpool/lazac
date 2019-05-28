@@ -51,7 +51,7 @@ function is_symbol(name, punc) {
    if (name.length === 1) {
       if (punc.includes(name)) return false;
    }
-   if (/[0-9]+/.test(name)) return false;
+   if (/^[0-9]+/.test(name)) return false;
    return true;
 }
 
