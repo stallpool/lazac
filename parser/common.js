@@ -45,6 +45,16 @@ function is_not_spacen(ch) {
    return space.indexOf(ch) < 0;
 }
 
+function is_symbol(name, punc) {
+   punc = punc || stops;
+   if (!name) return false;
+   if (name.length === 1) {
+      if (punc.includes(name)) return false;
+   }
+   if (/[0-9]+/.test(name)) return false;
+   return true;
+}
+
 function search_prev(tokens, index, fn) {
    while(index >= 0 && fn(tokens[index])) {
       index --;
@@ -173,6 +183,7 @@ module.exports = {
    is_spacen,
    is_not_space,
    is_not_spacen,
+   is_symbol,
    search_prev,
    search_next,
    search_next_skip_space,

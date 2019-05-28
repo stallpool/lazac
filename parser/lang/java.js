@@ -54,6 +54,7 @@ const java_feature_decorator = {
       'protected', 'transient', 'strictfp', 'volatile', 'const', 'native',
    ],
    detect_modifier: function (env, cursor) {
+      // backward
       let modifier = [];
       let st = cursor, x;
       st = i_common.search_prev_skip_spacen(env.tokens, st-1);
@@ -69,6 +70,48 @@ const java_feature_decorator = {
       delete env.modifier;
       if (!modifier.length) return null;
       return modifier;
+   },
+   detect_foward_modifier: function (env, cursor, start) {
+      let st = cursor-1, x;
+      if (start) {
+         st = start;
+      } else {
+         while (st >= 0) {
+            x = env.tokens[st];
+            // @A() public void b() { ... }
+            // public <T> void t() { ... }
+            if (x.token === ')' || x.token === '>') {
+               let pair = find_scope(env, st);
+               if (!pair) return null;
+               st = pair.startIndex - 1;
+               continue;
+            }
+            if (x.token === ';' || x.token === '{' || x.token === '}') {
+               break;
+            }
+            st --;
+         }
+         st = i_common.search_next_skip_spacen(env.tokens, st+1);
+      }
+      let i = st, step = 0;
+      env.modifier = [];
+      do {
+         x = env.tokens[i];
+         if (x.token === '@') {
+            step = java_feature_decorator.annotation(env, i);
+            if (step === 0) return;
+            i = i_common.search_next_skip_spacen(env.tokens, i+step);
+            continue;
+         }
+         if (java_feature_decorator.const_modifier.includes(x.token)) {
+            env.modifier.push(x.token);
+            i = i_common.search_next_skip_spacen(env.tokens, i+1);
+            continue;
+         }
+         break;
+      } while(i < cursor);
+      if (!env.modifier.length) delete env.modifier;
+      return i;
    },
    'package': function (env, cursor) {
       let index = i_common.search_next_stop(env.tokens, cursor+1, [';', '\n']);
@@ -112,6 +155,7 @@ const java_feature_decorator = {
       if (modifier) scope_item.modifier = modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
+      scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       // TODO: insert extends and implements decorator
       let block = find_scope(env, block_st);
@@ -132,6 +176,7 @@ const java_feature_decorator = {
       if (modifier) scope_item.modifier = modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
+      scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       // TODO: insert implements decorator
       let block = find_scope(env, block_st);
@@ -156,6 +201,7 @@ const java_feature_decorator = {
       if (modifier) scope_item.modifier = modifier;
       ed = i_common.search_next_skip_spacen(env.tokens, ed+1);
       scope_item.name = env.tokens[ed].token;
+      scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       let block = find_scope(env, block_st);
       scope_item.block = block;
@@ -175,15 +221,34 @@ const java_feature_decorator = {
       if (modifier) scope_item.modifier = modifier;
       let ed = i_common.search_next_skip_spacen(env.tokens, cursor+1);
       scope_item.name = env.tokens[ed].token;
+      scope_item.position = env.tokens[ed].position;
       let block_st = i_common.search_next_stop(env.tokens, ed+1, ['{']);
       let block = find_scope(env, block_st);
       scope_item.block = block;
       ed = block.endIndex + 1;
       scope_item.type = 'enum';
       scope.symbol_list.push(scope_item);
+      let enum_item_list = [];
+      let enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, block.startIndex+1);
+      do {
+         // should follow as
+         // - <EnumItem> ","
+         // - <EnumItem> ";"
+         // - <EnumItem> "}"
+         x = env.tokens[enum_item_cursor];
+         if (!x) return 0;
+         if (!i_common.is_symbol(x.token)) return 0;
+         enum_item_list.push({ name: x.token, position: x.position, type: 'enum_item' });
+         enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+1);
+         x = env.tokens[enum_item_cursor];
+         if (!x) return 0;
+         if (x.token === ';' || x.token === '}') break;
+         if (x.token !== ',') return 0;
+         enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+1);
+      } while (true);
+      scope_item.symbol_list = enum_item_list;
       env.scope_stack.push(scope_item);
-      // TODO: detect enum items
-      // TODO: recursive to enum decorator
+      // TODO: recursive to enum decorator using (enum_item_cursor, block.endIndex)
       env.scope_stack.pop();
       return ed - cursor;
    },
@@ -211,6 +276,10 @@ const java_feature_decorator = {
    'function': function (env, cursor) {
       let st = i_common.search_prev_stop(env.tokens, cursor-1, [')']);
       if (st < 0) return 0;
+      let throws_check = i_common.search_next_skip_spacen(env.tokens, st+1);
+      if (throws_check !== cursor) {
+         if (env.tokens[throws_check].token !== 'throws') return 0;
+      }
       let scope_item = {};
       let param_range = find_scope(env, st);
       scope_item.param = param_range;
@@ -220,14 +289,17 @@ const java_feature_decorator = {
       // XXX: when handle with 'new', remove below line
       if (x.token === '>') return 0; // e.g. new A<T> () { }
       scope_item.name = x.token;
+      scope_item.position = x.position;
       st = i_common.search_prev_skip_spacen(env.tokens, st-1);
       x = env.tokens[st];
       if (!x) return 0;
-      // TODO: detect modifier, generic, return type
       // e.g. public static <T> ArrayList<T>[][] ...
+      java_feature_decorator.detect_foward_modifier(env, cursor);
+      // TODO: detect generic and return type
+      if (env.modifier) scope_item.modifier = env.modifier;
+      delete env.modifier;
       let block_range = find_scope(env, cursor);
       scope_item.block = block_range;
-      delete env.modifier;
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
       scope.symbol_list.push(scope_item);
@@ -243,7 +315,9 @@ const java_feature_decorator = {
    'function_declare': function (env, cursor) {
       let scope_item = get_function(env, cursor-1);
       if (!scope_item) return 0;
-      // TODO: detect modifier, generic, return type
+      java_feature_decorator.detect_foward_modifier(env, cursor);
+      // TODO: detect generic and return type
+      if (env.modifier) scope_item.modifier = env.modifier;
       delete env.modifier;
       let scope = env.scope_stack[env.scope_stack.length - 1];
       scope.symbol_list = scope.symbol_list || [];
@@ -272,13 +346,67 @@ const java_feature_decorator = {
          return {
             type: 'function_declaration',
             name: env.tokens[name_i].token,
+            position: env.tokens[name_i].position,
             param: param_range,
          };
       }
    },
    'field': function (env, cursor) {
+      if (!env.modifier) env.modifier = [];
+      let scope = env.scope_stack[env.scope_stack.length - 1];
+      let statement_st = null;
+      let prev_item = scope.symbol_list?scope.symbol_list[scope.symbol_list.length-1]:null;
+      if (prev_item) {
+         if (prev_item.block) {
+            statement_st = prev_item.block.endIndex;
+         } else {
+            statement_st = i_common.search_prev_stop(env.tokens, cursor-1, [';']);
+         }
+      } else {
+         // public class A { int a; }
+         //                  ^
+         statement_st = scope.block.startIndex;
+      }
+      statement_st = i_common.search_next_skip_spacen(env.tokens, statement_st+1);
+      let st = java_feature_decorator.detect_foward_modifier(env, cursor, statement_st);
+      // TODO: deal with "{};" "int a = 9;;"
+      let field_item = {};
+      field_item.type = 'field';
+      if (env.modifier && env.modifier.length) field_item.modifier = env.modifier;
       delete env.modifier;
-      return 0;
+      let last_i = -1;
+      let state = 0; // 0 = scan_declare, 1 = assignment
+      let fields = [];
+      for (let i = st; i < cursor; i ++) {
+         let x = env.tokens[i];
+         if (state === 0) {
+            if (x.token === ',' || x.token === ';' || x.token === '=') {
+               last_i = i_common.search_prev_skip_spacen(env.tokens, i-1);
+               let item = {
+                  position: env.tokens[last_i].position,
+                  name: env.tokens[last_i].token,
+               };
+               fields.push(Object.assign(item, field_item));
+            }
+            if (x.token === '=') {
+               state = 1;
+            }
+         } else if (state === 1) {
+            if (x.token === '(' || x.token === '[' || x.token === '{' || x.token === '<') {
+               let pair = find_scope(env, i);
+               i = pair.endIndex - 1;
+               continue;
+            }
+            if (x.token === ',' || x.token === ';') {
+               state = 0;
+            }
+         }
+      }
+      scope.symbol_list = scope.symbol_list || [];
+      fields.forEach((item) => {
+         scope.symbol_list.push(item);
+      });
+      return 1;
    },
    'init_block': function (env, cursor) {
       let st = i_common.search_prev_skip_spacen(env.tokens, cursor-1);
@@ -399,6 +527,34 @@ function find_scope(env, index) {
    return pair;
 }
 
+const index_able = [
+   'function_declaration', 'function', 'class', 'enum', 'enum_item',
+   'interface', '@interface', 'field',
+];
+function symbol_map(env) {
+   // @require env.scope_tree
+   env.symbol_index = {
+      java: {}
+   };
+   iterate_tree(env.scope_tree, env.symbol_index.java);
+
+   function iterate_tree(scope_item, symbol_index) {
+      if (index_able.includes(scope_item.type)) {
+         let index = symbol_index[scope_item.name];
+         if (!Array.isArray(index)) {
+            index = [];
+            symbol_index[scope_item.name] = index;
+         }
+         index.push(Object.assign({
+            type: scope_item.type
+         }, scope_item.position));
+      }
+      if (scope_item.symbol_list && scope_item.symbol_list.length) {
+         scope_item.symbol_list.forEach((scope_item) => iterate_tree(scope_item, symbol_index));
+      }
+   }
+}
+
 function parse(env) {
    tokenize(env);
    // i_extractor.merge_tokens(env, java_combinations);
@@ -413,8 +569,13 @@ function parse(env) {
    i_decorator.decorate_scope(env, java_features._root, 0, env.tokens.length);
    delete env.scope_stack;
    i_decorator.decorate_id(env);
-   console.log(JSON.stringify(env.scope_tree, null, 4));
-   return env.tokens;
+   symbol_map(env);
+   let parsed = {
+      tokens: env.tokens,
+      scope: env.scope_tree,
+      symbol_index: env.symbol_index,
+   };
+   return parsed;
 }
 
 module.exports = {

@@ -9,7 +9,7 @@ public class X <T> {
    public interface T1<T, TXX> {}
    public class T2 {
       /** Test doc */
-      private T1 t = new T1<Test, Void>() {};
+      private T1 t = new T1<Test, Void>() {}, t2 = new T1<Test, Void>();
    }
    public static class T3 extends X<String> {
       int b1() { return 0; }
@@ -62,6 +62,7 @@ public class X <T> {
    public static class K {
 
       public static class Name<T extends List<String> > {}
+      Integer[] x = new Integer[]{1, 2, 3};
 
       public static interface TT{
          public <T> List<T>[][] test();
