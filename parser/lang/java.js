@@ -428,6 +428,16 @@ const java_feature_decorator = {
       for (let i = st; i < cursor; i ++) {
          let x = env.tokens[i];
          if (state === 0) {
+            // skip generic and array
+            // e.g. public HashMap<String, List<String>>[][] test = null;
+            //             ^
+            if (x.token === '<' || x.token === '(' || x.token === '[' || x.token === '{') {
+               last_i = -1;
+               let type_range = find_scope(env, i);
+               if (!type_range) return 0;
+               i = type_range.endIndex;
+               continue;
+            }
             if (x.token === ',' || x.token === ';' || x.token === '=') {
                last_i = i_common.search_prev_skip_spacen(env.tokens, i-1);
                let item = {
@@ -582,6 +592,7 @@ function find_scope(env, index) {
 const index_able = [
    'function_declaration', 'function', 'class', 'enum', 'enum_item',
    'interface', '@interface', 'field',
+   // TODO: function_lambda, new_class
 ];
 function symbol_map(env) {
    // @require env.scope_tree
