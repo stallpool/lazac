@@ -58,12 +58,15 @@ const java_feature_decorator = {
       for (let i = st; i <= ed; i ++) {
          let x = env.tokens[i];
          if (x.token === '.') {
-            ref.push('.');
+            // TODO: use data flow to analyze accessor e.g. (a.b(e, f, g).c().d())
+            // ref.push('.');
             continue;
          }
          if (!x.position) continue;
          // XXX: now skip x.class
          if (java_keywords.includes(x.token)) continue;
+         // skip string
+         if (x.tag === i_common.TAG_STRING || x.tag === i_common.TAG_REGEX) continue;
          ref.push(Object.assign({
             name: x.token,
          }, x.position));
@@ -79,7 +82,12 @@ const java_feature_decorator = {
          if (!x) break;
          if (!java_feature_decorator.const_modifier.includes(x.token)) break;
          modifier.unshift(x.token);
-         st = i_common.search_prev_skip_spacen(env.tokens, st-1);
+         let next_st = i_common.search_prev_skip_spacen(env.tokens, st-1);
+         if (next_st < 0) {
+            break;
+         } else {
+            st = next_st;
+         }
          x = env.tokens[st];
       } while (true);
       if (env.modifier) modifier = env.modifier.concat(modifier);
@@ -402,22 +410,44 @@ const java_feature_decorator = {
    'field': function (env, cursor) {
       if (!env.modifier) env.modifier = [];
       let scope = env.scope_stack[env.scope_stack.length - 1];
-      let statement_st = null;
+      // deal with "{};" "int a = 9;;"
+      // skip empty statement, e.g. public enum A {};
+      //                            ^---> public enum A {} + ;
+      let statement_st = i_common.search_prev_skip_spacen(env.tokens, cursor-1);
       let prev_item = scope.symbol_list?scope.symbol_list[scope.symbol_list.length-1]:null;
       if (prev_item) {
+         // prev is `enum A {} ... ;`
          if (prev_item.block) {
-            statement_st = prev_item.block.endIndex;
+            if (prev_item.block.endIndex === statement_st) {
+               return 0;
+            } else {
+               // prev is `enum A {} ;;;; ...;`
+               statement_st = prev_item.block.endIndex;
+            }
          } else {
-            statement_st = i_common.search_prev_stop(env.tokens, cursor-1, [';']);
+            // prev is `int a; ... ;`
+            do {
+               let prev_x = env.tokens[statement_st];
+               if (!prev_x) break;
+               if (prev_x.token === '}' || prev_x.token === ']' || prev_x.token === ')' || prev_x.token === '>') {
+                  let middle_range = find_scope(env, statement_st);
+                  statement_st = middle_range.startIndex - 1;
+                  continue;
+               }
+               if (prev_x.token === ';') break;
+               statement_st --;
+            } while(statement_st >= 0);
          }
       } else {
-         // public class A { int a; }
-         //                  ^
          statement_st = scope.block.startIndex;
       }
       statement_st = i_common.search_next_skip_spacen(env.tokens, statement_st+1);
+      let empty_statement_x = env.tokens[statement_st];
+      while (empty_statement_x && empty_statement_x.token === ';') {
+         statement_st = i_common.search_next_skip_spacen(env.tokens, statement_st+1);
+         empty_statement_x = env.tokens[statement_st];
+      }
       let st = java_feature_decorator.detect_foward_modifier(env, cursor, statement_st);
-      // TODO: deal with "{};" "int a = 9;;"
       let field_item = {};
       field_item.type = 'field';
       if (env.modifier && env.modifier.length) field_item.modifier = env.modifier;
@@ -600,7 +630,7 @@ function symbol_map(env) {
       java: {}
    };
    env.symbol_ref = [];
-   let base_package = env.scope_tree.base;
+   let base_package = env.scope_tree.base || '';
    iterate_tree(env.scope_tree, env.symbol_index.java, env.symbol_ref, base_package);
 
    function iterate_tree(scope_item, symbol_index, symbol_ref, scope_string) {
