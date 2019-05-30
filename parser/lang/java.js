@@ -431,7 +431,7 @@ const java_feature_decorator = {
          // public int a() throws Exception;
          // public int a();
          if (x) {
-            if (x.token !== 'throws' || x.token !== ';') return null;
+            if (x.token !== 'throws' && x.token !== ';') return null;
          }
          let name_i = i_common.search_prev_skip_spacen(env.tokens, param_range.startIndex-1);
          return {
