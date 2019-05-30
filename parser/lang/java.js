@@ -50,7 +50,7 @@ function tokenize(env) {
 
 const java_feature_decorator = {
    const_modifier: [
-      'public', 'private', 'default', 'abstract', 'static', 'synchronized',
+      'public', 'private', 'default', 'abstract', 'static', 'synchronized', 'final',
       'protected', 'transient', 'strictfp', 'volatile', 'const', 'native',
    ],
    detect_ref: function (env, st, ed) {
@@ -441,12 +441,16 @@ const java_feature_decorator = {
       } else {
          statement_st = scope.block.startIndex;
       }
+      // e.g. public enum A {};;;;;; ....;
+      //                     ^------>^
       statement_st = i_common.search_next_skip_spacen(env.tokens, statement_st+1);
       let empty_statement_x = env.tokens[statement_st];
       while (empty_statement_x && empty_statement_x.token === ';') {
          statement_st = i_common.search_next_skip_spacen(env.tokens, statement_st+1);
          empty_statement_x = env.tokens[statement_st];
       }
+      // e.g. public static final int a = 0;
+      //      ^~~~~~~~~~~~~~~~~~~^ modifier
       let st = java_feature_decorator.detect_foward_modifier(env, cursor, statement_st);
       let field_item = {};
       field_item.type = 'field';
@@ -454,6 +458,8 @@ const java_feature_decorator = {
       delete env.modifier;
       let last_i = -1;
       let state = 0; // 0 = scan_declare, 1 = assignment
+      // fields: int a, b, c = 1, d;
+      //             ^  ^  ^      ^
       let fields = [];
       for (let i = st; i < cursor; i ++) {
          let x = env.tokens[i];
@@ -470,9 +476,19 @@ const java_feature_decorator = {
             }
             if (x.token === ',' || x.token === ';' || x.token === '=') {
                last_i = i_common.search_prev_skip_spacen(env.tokens, i-1);
+               x = env.tokens[last_i];
+               if (!x) return 0;
+               // e.g. int test[1] = { ... };
+               while (x.token === ']') {
+                  let array_range = find_scope(env, last_i);
+                  if (!array_range) return 0;
+                  last_i = i_common.search_prev_skip_spacen(env.tokens, array_range.startIndex-1);
+                  x = env.tokens[last_i];
+                  if (!x) return 0;
+               }
                let item = {
-                  position: env.tokens[last_i].position,
-                  name: env.tokens[last_i].token,
+                  position: x.position,
+                  name: x.token,
                };
                fields.push(Object.assign(item, field_item));
             }
