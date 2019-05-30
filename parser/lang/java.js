@@ -404,6 +404,12 @@ const java_feature_decorator = {
             st --;
          }
          if (!no_assign || !param_range) return null;
+         // @A() public int a;
+         st = i_common.search_next_skip_spacen(param_range.endIndex+1);
+         x = env.tokens[st];
+         // public int a() throws Exception;
+         // public int a();
+         if (x.token !== 'throws' || x.token !== ';') return 0;
          let name_i = i_common.search_prev_skip_spacen(env.tokens, param_range.startIndex-1);
          return {
             type: 'function_declaration',
