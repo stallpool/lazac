@@ -264,6 +264,7 @@ const java_feature_decorator = {
       scope.symbol_list.push(scope_item);
       let enum_item_list = [];
       let enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, block.startIndex+1);
+      env.modifier = [];
       do {
          // should follow as
          // - <EnumItem> ","
@@ -271,11 +272,31 @@ const java_feature_decorator = {
          // - <EnumItem> "}"
          x = env.tokens[enum_item_cursor];
          if (!x) return 0;
+         if (x.token === '@') {
+            step = java_feature_decorator.annotation(env, enum_item_cursor);
+            if (step === 0) return;
+            enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+step);
+            continue;
+         }
+         // e.g. public enum A {a, b, c,}
+         //                             ^
+         if (x.token === '}') break;
          if (!i_common.is_symbol(x.token)) return 0;
-         enum_item_list.push({ name: x.token, position: x.position, type: 'enum_item' });
+         let enum_item = {
+            name: x.token,
+            position: x.position,
+            type: 'enum_item'
+         };
+         if (env.modifier && env.modifier.length) {
+            enum_item.modifier = env.modifier;
+            env.modifier = [];
+         }
+         enum_item_list.push(enum_item);
          enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+1);
          x = env.tokens[enum_item_cursor];
          if (!x) return 0;
+         // e.g. public enum A{a, b, c;}
+         // e.g. public enum A{a, b, c}
          if (x.token === ';' || x.token === '}') break;
          if (x.token !== ',') return 0;
          enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+1);
@@ -405,11 +426,13 @@ const java_feature_decorator = {
          }
          if (!no_assign || !param_range) return null;
          // @A() public int a;
-         st = i_common.search_next_skip_spacen(param_range.endIndex+1);
+         st = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex+1);
          x = env.tokens[st];
          // public int a() throws Exception;
          // public int a();
-         if (x.token !== 'throws' || x.token !== ';') return 0;
+         if (x) {
+            if (x.token !== 'throws' || x.token !== ';') return null;
+         }
          let name_i = i_common.search_prev_skip_spacen(env.tokens, param_range.startIndex-1);
          return {
             type: 'function_declaration',
@@ -473,7 +496,7 @@ const java_feature_decorator = {
       // fields: int a, b, c = 1, d;
       //             ^  ^  ^      ^
       let fields = [];
-      for (let i = st; i < cursor; i ++) {
+      for (let i = st; i <= cursor; i ++) {
          let x = env.tokens[i];
          if (state === 0) {
             // skip generic and array
