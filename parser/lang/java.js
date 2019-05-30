@@ -389,8 +389,14 @@ const java_feature_decorator = {
             if (!x) break;
             if (x.token === '{' || x.token === '}' || x.token === ';') break;
             if (x.token === ')') {
-               param_range = find_scope(env, st);
-               st = param_range.startIndex;
+               // e.g. @a(1) public int a();
+               if (param_range) {
+                  let annotate_param = find_scope(env, st);
+                  st = annotate_param.startIndex;
+               } else {
+                  param_range = find_scope(env, st);
+                  st = param_range.startIndex;
+               }
             } else if (x.token === '=') {
                no_assign = false;
                break;
