@@ -510,6 +510,7 @@ const java_feature_decorator = {
                continue;
             }
             if (x.token === ',' || x.token === ';' || x.token === '=') {
+               if (x.token === '=') state = 1;
                last_i = i_common.search_prev_skip_spacen(env.tokens, i-1);
                x = env.tokens[last_i];
                if (!x) return 0;
@@ -526,9 +527,6 @@ const java_feature_decorator = {
                   name: x.token,
                };
                fields.push(Object.assign(item, field_item));
-            }
-            if (x.token === '=') {
-               state = 1;
             }
          } else if (state === 1) {
             if (x.token === '(' || x.token === '[' || x.token === '{' || x.token === '<') {
