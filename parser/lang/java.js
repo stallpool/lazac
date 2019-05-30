@@ -464,7 +464,7 @@ const java_feature_decorator = {
             do {
                let prev_x = env.tokens[statement_st];
                if (!prev_x) break;
-               if (prev_x.token === '}' || prev_x.token === ']' || prev_x.token === ')' || prev_x.token === '>') {
+               if (prev_x.token === '}' || prev_x.token === ']' || prev_x.token === ')') {
                   let middle_range = find_scope(env, statement_st);
                   statement_st = middle_range.startIndex - 1;
                   continue;
@@ -529,7 +529,9 @@ const java_feature_decorator = {
                fields.push(Object.assign(item, field_item));
             }
          } else if (state === 1) {
-            if (x.token === '(' || x.token === '[' || x.token === '{' || x.token === '<') {
+            // do not add '<'
+            // e.g. int a = 1 << 1;
+            if (x.token === '(' || x.token === '[' || x.token === '{') {
                let pair = find_scope(env, i);
                i = pair.endIndex - 1;
                continue;
