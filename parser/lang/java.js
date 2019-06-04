@@ -107,6 +107,11 @@ const java_feature_decorator = {
             // @A() public void b() { ... }
             // public <T> void t() { ... }
             if (x.token === ')' || x.token === '>') {
+               if (x && env.tokens[st-1] && x.token === '>' && env.tokens[st-1].token === '-') {
+                  // ->
+                  st --;
+                  continue;
+               }
                let pair = find_scope(env, st);
                if (!pair) return null;
                st = pair.startIndex - 1;
@@ -188,11 +193,11 @@ const java_feature_decorator = {
       let block = find_scope(env, block_st);
       scope_item.block = block;
       scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
-      ed = block.endIndex + 1;
+      ed = block.endIndex;
       scope_item.type = 'class';
       scope.symbol_list.push(scope_item);
       env.scope_stack.push(scope_item);
-      i_decorator.decorate_scope(env, java_features.klass, block.startIndex+1, block.endIndex);
+      i_decorator.decorate_scope(env, java_features.klass, block.startIndex+1, block.endIndex-1);
       env.scope_stack.pop();
       return ed - cursor;
    },
@@ -211,11 +216,11 @@ const java_feature_decorator = {
       let block = find_scope(env, block_st);
       scope_item.block = block;
       scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
-      ed = block.endIndex + 1;
+      ed = block.endIndex;
       scope_item.type = 'interface';
       scope.symbol_list.push(scope_item);
       env.scope_stack.push(scope_item);
-      i_decorator.decorate_scope(env, java_features.interface, block.startIndex+1, block.endIndex);
+      i_decorator.decorate_scope(env, java_features.interface, block.startIndex+1, block.endIndex-1);
       env.scope_stack.pop();
       return ed - cursor;
    },
@@ -237,11 +242,11 @@ const java_feature_decorator = {
       let block = find_scope(env, block_st);
       scope_item.block = block;
       scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
-      ed = block.endIndex + 1;
+      ed = block.endIndex;
       scope_item.type = '@interface';
       scope.symbol_list.push(scope_item);
       env.scope_stack.push(scope_item);
-      i_decorator.decorate_scope(env, java_features.annotation_interface, block.startIndex+1, block.endIndex);
+      i_decorator.decorate_scope(env, java_features.annotation_interface, block.startIndex+1, block.endIndex-1);
       env.scope_stack.pop();
       return ed - cursor;
    },
@@ -259,7 +264,7 @@ const java_feature_decorator = {
       let block = find_scope(env, block_st);
       scope_item.block = block;
       scope_item.ref_list = java_feature_decorator.detect_ref(env, type_st, block.startIndex);
-      ed = block.endIndex + 1;
+      ed = block.endIndex;
       scope_item.type = 'enum';
       scope.symbol_list.push(scope_item);
       let enum_item_list = [];
@@ -317,7 +322,7 @@ const java_feature_decorator = {
       if (x.token === '(') {
          let range = find_scope(env, ed);
          // TODO: recursive to annotation expression decorator
-         ed = range.endIndex + 1;
+         ed = range.endIndex;
       }
       if (!env.modifier) env.modifier = [];
       let modifier_item = {
@@ -372,7 +377,7 @@ const java_feature_decorator = {
       }
       scope_item.ref_list = java_feature_decorator.detect_ref(env, function_st, block_range.endIndex);
       env.scope_stack.pop();
-      return block_range.endIndex - cursor + 1;
+      return block_range.endIndex - cursor;
    },
    'statement': function (env, cursor) {
       delete env.modifier;
@@ -426,12 +431,13 @@ const java_feature_decorator = {
          }
          if (!no_assign || !param_range) return null;
          // @A() public int a;
-         st = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex+1);
+         st = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex);
          x = env.tokens[st];
          // public int a() throws Exception;
+         // public String key() default "";
          // public int a();
          if (x) {
-            if (x.token !== 'throws' && x.token !== ';') return null;
+            if (x.token !== ';' && x.token !== 'throws' && x.token !== 'default') return null;
          }
          let name_i = i_common.search_prev_skip_spacen(env.tokens, param_range.startIndex-1);
          return {
@@ -441,6 +447,30 @@ const java_feature_decorator = {
             param: param_range,
          };
       }
+   },
+   'new_skip': function (env, cursor) {
+      let st = cursor;
+      for (let n = env.tokens.length; st < n; st ++) {
+         let x = env.tokens[st];
+         if (x.token === '(' || x.token === '[') {
+            let middle_range = find_scope(env, st);
+            if (!middle_range) return 0;
+            st = middle_range.endIndex - 1;
+            continue;
+         }
+         // e.g. Test a = new Test<String, String>() { ... }
+         if (x.token === '{') {
+            let block_range = find_scope(env, st);
+            st = block_range.endIndex - 1;
+            break;
+         }
+         // e.g. Test a = new Test<ArrayList<String>>(), b = null;
+         if (x.token === ';') {
+            st --;
+            break;
+         }
+      }
+      return st - cursor + 1;
    },
    'field': function (env, cursor) {
       if (!env.modifier) env.modifier = [];
@@ -457,7 +487,7 @@ const java_feature_decorator = {
                return 0;
             } else {
                // prev is `enum A {} ;;;; ...;`
-               statement_st = prev_item.block.endIndex;
+               statement_st = prev_item.block.endIndex - 1;
             }
          } else {
             // prev is `int a; ... ;`
@@ -506,7 +536,7 @@ const java_feature_decorator = {
                last_i = -1;
                let type_range = find_scope(env, i);
                if (!type_range) return 0;
-               i = type_range.endIndex;
+               i = type_range.endIndex - 1;
                continue;
             }
             if (x.token === ',' || x.token === ';' || x.token === '=') {
@@ -534,6 +564,22 @@ const java_feature_decorator = {
             if (x.token === '(' || x.token === '[' || x.token === '{') {
                let pair = find_scope(env, i);
                i = pair.endIndex - 1;
+               continue;
+            }
+            if (x.token === 'new') {
+               // e.g. public Test<String, String> = new Test<String, String>();
+               //                                0 ^ 1            1 ^ 0       )^
+               //      public Test<A[], <B, C, D>> x = new Test<A[], <B, C, D>>(), y;
+               //      public String[] a = new String[3];
+               do {
+                  x = env.tokens[i];
+                  if (x.token === '<' || x.token === '(' || x.token === '[' || x.token === '{') {
+                     let type_range = find_scope(env, i);
+                     if (!type_range) return 0;
+                     i = type_range.endIndex - 1;
+                  }
+                  i ++;
+               } while(x.token !== ';' && x.token !== '(' && x.token !== ',');
                continue;
             }
             if (x.token === ',' || x.token === ';') {
@@ -580,7 +626,7 @@ const java_feature_decorator = {
       env.scope_stack.push(scope_item);
       // TODO: insert function insight decorator
       env.scope_stack.pop();
-      return block_range.endIndex - cursor + 1;
+      return block_range.endIndex - cursor;
    }
 };
 
@@ -601,6 +647,7 @@ const java_features = {
          java_feature_decorator.function_declare,
          java_feature_decorator.field,
       ],
+      'new': [java_feature_decorator.new_skip],
       'class': [java_feature_decorator.klass],
       'interface': [java_feature_decorator.interface],
       'enum': [java_feature_decorator.enum],
@@ -618,6 +665,7 @@ const java_features = {
          java_feature_decorator.function_declare,
          java_feature_decorator.field,
       ],
+      'new': [java_feature_decorator.new_skip],
       'class': [java_feature_decorator.klass],
       'interface': [java_feature_decorator.interface],
       'enum': [java_feature_decorator.enum],
@@ -635,6 +683,7 @@ const java_features = {
          java_feature_decorator.function_declare,
          java_feature_decorator.field,
       ],
+      'new': [java_feature_decorator.new_skip],
       'class': [java_feature_decorator.klass],
       'interface': [java_feature_decorator.interface],
       'enum': [java_feature_decorator.enum],
@@ -652,6 +701,7 @@ const java_features = {
          java_feature_decorator.function_declare,
          java_feature_decorator.field,
       ],
+      'new': [java_feature_decorator.new_skip],
       'class': [java_feature_decorator.klass],
       'interface': [java_feature_decorator.interface],
       'enum': [java_feature_decorator.enum],
