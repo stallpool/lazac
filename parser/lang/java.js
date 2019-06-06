@@ -437,7 +437,7 @@ const java_feature_decorator = {
          }
          if (!no_assign || !param_range) return null;
          // @A() public int a;
-         st = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex);
+         st = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex+1);
          x = env.tokens[st];
          // public int a() throws Exception;
          // public String key() default "";
