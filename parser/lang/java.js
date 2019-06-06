@@ -302,13 +302,19 @@ const java_feature_decorator = {
          if (!x) return 0;
          // e.g. public enum A{a, b, c;}
          // e.g. public enum A{a, b, c}
+         // e.g. public enum A{ a(B.x0), b(B.x1); }
+         if (x.token === '(') {
+            let param_range = find_scope(env, enum_item_cursor);
+            enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, param_range.endIndex+1);
+            x = env.tokens[enum_item_cursor];
+         }
          if (x.token === ';' || x.token === '}') break;
          if (x.token !== ',') return 0;
          enum_item_cursor = i_common.search_next_skip_spacen(env.tokens, enum_item_cursor+1);
       } while (true);
       scope_item.symbol_list = enum_item_list;
       env.scope_stack.push(scope_item);
-      // TODO: recursive to enum decorator using (enum_item_cursor, block.endIndex)
+      i_decorator.decorate_scope(env, java_features.enum, enum_item_cursor+1, block.endIndex-1);
       env.scope_stack.pop();
       return ed - cursor;
    },
