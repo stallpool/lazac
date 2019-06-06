@@ -419,7 +419,16 @@ const java_feature_decorator = {
          while (st >= 0) {
             x = env.tokens[st];
             if (!x) break;
-            if (x.token === '{' || x.token === '}' || x.token === ';') break;
+            if (x.token === '{' || x.token === ';') break;
+            if (x.token === '}') {
+               let probe_range = find_scope(env, st);
+               if (!probe_range) break;
+               probe_range.startIndex = i_common.search_prev_skip_spacen(env.tokens, probe_range.startIndex-1);
+               x = env.tokens[probe_range.startIndex];
+               if (x.token !== 'default') break;
+               // e.g. int[] a() default {};
+               st = probe_range.startIndex;
+            }
             if (x.token === ')') {
                // e.g. @a(1) public int a();
                if (param_range) {
