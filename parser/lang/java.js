@@ -551,7 +551,7 @@ const java_feature_decorator = {
                last_i = -1;
                let type_range = find_scope(env, i);
                if (!type_range) return 0;
-               i = type_range.endIndex - 1;
+               i = type_range.endIndex;
                continue;
             }
             if (x.token === ',' || x.token === ';' || x.token === '=') {
@@ -581,6 +581,17 @@ const java_feature_decorator = {
                i = pair.endIndex - 1;
                continue;
             }
+            if (x.token === '<') {
+               // e.g. public int a = X.<T1, T2>build();
+               //      public int b = <T1, T2>buildX();
+               x = env.tokens[i_common.search_prev_skip_spacen(env.tokens, i-1)];
+               if (x && (x.token === '=' || x.token === '.')) {
+                  let generic_function_call_range = find_scope(env, i);
+                  if (generic_function_call_range) {
+                     i = generic_function_call_range.endIndex;
+                  }
+               }
+            }
             if (x.token === 'new') {
                // e.g. public Test<String, String> = new Test<String, String>();
                //                                0 ^ 1            1 ^ 0       )^
@@ -595,10 +606,11 @@ const java_feature_decorator = {
                   }
                   i ++;
                } while(x.token !== ';' && x.token !== '(' && x.token !== ',');
-               continue;
             }
-            if (x.token === ',' || x.token === ';') {
+            if (x.token === ',') {
                state = 0;
+            } else if (x.token === ';') {
+               break;
             }
          }
       }
